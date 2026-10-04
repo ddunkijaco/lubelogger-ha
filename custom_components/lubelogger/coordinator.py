@@ -6,10 +6,12 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import LubeLoggerClient
 from .const import (
+    CONF_API_KEY,
     CONF_PASSWORD,
     CONF_URL,
     CONF_USERNAME,
@@ -28,8 +30,10 @@ class LubeLoggerDataUpdateCoordinator(DataUpdateCoordinator):
         self.entry = entry
         self.client = LubeLoggerClient(
             url=entry.data[CONF_URL],
-            username=entry.data[CONF_USERNAME],
-            password=entry.data[CONF_PASSWORD],
+            username=entry.data.get(CONF_USERNAME),
+            password=entry.data.get(CONF_PASSWORD),
+            api_key=entry.data.get(CONF_API_KEY),
+            session=async_get_clientsession(hass),
         )
 
         update_interval = timedelta(

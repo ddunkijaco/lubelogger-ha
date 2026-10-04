@@ -56,3 +56,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("Failed to unload LubeLogger integration platforms")
 
     return unload_ok
+

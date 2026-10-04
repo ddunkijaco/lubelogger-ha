@@ -2,6 +2,8 @@
 
 Home Assistant integration for [LubeLogger](https://github.com/hargata/lubelog), a web-based vehicle maintenance and fuel mileage tracker.
 
+Fork of [hollowpnt92/lubelogger-ha](https://github.com/hollowpnt92/lubelogger-ha) that adds API-key authentication and write actions.
+
 ## Features
 
 Creates a device for each vehicle in your LubeLogger instance with sensors for:
@@ -18,15 +20,33 @@ Creates a device for each vehicle in your LubeLogger instance with sensors for:
 
 Sensors only appear if data exists for that vehicle.
 
+### Actions
+
+| Action | Adds |
+|---|---|
+| `lubelogger.add_fuel_record` | A fuel fill-up (`odometer`, `fuel_consumed`, optional `cost`, `is_fill_to_full`, `missed_fuel_up`) |
+| `lubelogger.add_odometer_record` | An odometer reading |
+| `lubelogger.add_service_record` | A service record (`description`, `odometer`, optional `cost`) |
+| `lubelogger.add_reminder` | A reminder due by `due_date`, `due_odometer`, or both |
+
+All actions take a `vehicle_id` (the LubeLogger vehicle ID) and optional `date` (defaults to today), `notes` and `tags`. They return the created record as an action response.
+
+```yaml
+action: lubelogger.add_fuel_record
+data:
+  vehicle_id: 2
+  odometer: "{{ states('sensor.odometer') | int }}"
+  fuel_consumed: 11.4
+```
+
 ## Installation
 
-### HACS (Recommended)
+### HACS
 
-1. Open HACS → Integrations
-2. Click the menu (⋮) → Custom repositories
-3. Add repository: `https://github.com/larry/lubelogger-ha` (Category: Integration)
-4. Search for "LubeLogger" and install
-5. Restart Home Assistant
+1. Open HACS → ⋮ → Custom repositories
+2. Add `https://github.com/ddunkijaco/lubelogger-ha` (Category: Integration)
+3. Search for "LubeLogger" and install
+4. Restart Home Assistant
 
 ### Manual
 
@@ -36,9 +56,8 @@ Sensors only appear if data exists for that vehicle.
 
 ## Configuration
 
-When adding the integration, provide:
+- **URL**: Your LubeLogger instance URL (e.g. `http://192.168.1.100:8080`)
+- **API key** (recommended): create one in LubeLogger under Settings → API Keys. Use the **Editor** role if you want to use the actions; **Viewer** is enough for sensors only.
+- **Username / Password**: used only when no API key is given (HTTP Basic auth).
 
-- **URL**: Your LubeLogger instance URL (e.g., `http://192.168.1.100:8447`)
-- **Username**: Your LubeLogger username
-- **Password**: Your LubeLogger password
-
+Leave all credentials blank if LubeLogger authentication is disabled. Credentials can be changed later with **Reconfigure** on the integration.

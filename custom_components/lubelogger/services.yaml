@@ -1,0 +1,153 @@
+add_fuel_record:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: lubelogger
+    vehicle_id:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+          mode: box
+    date:
+      selector:
+        date:
+    odometer:
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    fuel_consumed:
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          mode: box
+    cost:
+      default: 0
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          mode: box
+    is_fill_to_full:
+      default: true
+      selector:
+        boolean:
+    missed_fuel_up:
+      default: false
+      selector:
+        boolean:
+    notes:
+      selector:
+        text:
+    tags:
+      selector:
+        text:
+
+add_odometer_record:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: lubelogger
+    vehicle_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    date:
+      selector:
+        date:
+    odometer:
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    initial_odometer:
+      selector:
+        number:
+          min: 0
+          mode: box
+    notes:
+      selector:
+        text:
+    tags:
+      selector:
+        text:
+
+add_service_record:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: lubelogger
+    vehicle_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    date:
+      selector:
+        date:
+    description:
+      required: true
+      selector:
+        text:
+    odometer:
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    cost:
+      default: 0
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          mode: box
+    notes:
+      selector:
+        text:
+    tags:
+      selector:
+        text:
+
+add_reminder:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: lubelogger
+    vehicle_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    description:
+      required: true
+      selector:
+        text:
+    due_date:
+      selector:
+        date:
+    due_odometer:
+      selector:
+        number:
+          min: 0
+          mode: box
+    notes:
+      selector:
+        text:
+    tags:
+      selector:
+        text:

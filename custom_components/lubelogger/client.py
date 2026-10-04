@@ -19,6 +19,7 @@ from .const import (
     API_TAX,
     API_UPGRADE_RECORD,
     API_VEHICLES,
+    API_WHOAMI,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,16 +31,44 @@ class LubeLoggerClient:
     def __init__(
         self,
         url: str,
-        username: str,
-        password: str,
+        username: str | None = None,
+        password: str | None = None,
         session: aiohttp.ClientSession | None = None,
+        api_key: str | None = None,
     ) -> None:
-        """Initialize the client."""
-        self._url = url.rstrip("/")
-        self._username = username
-        self._password = password
+        """Initialize the client.
+
+        Authenticates with an API key (``x-api-key`` header) when one is given,
+        otherwise falls back to HTTP Basic auth, otherwise sends no credentials
+        (for instances with authentication disabled).
+        """
+        url = url.rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            url = f"http://{url}"
+        self._url = url
         self._session = session
-        self._auth = aiohttp.BasicAuth(username, password)
+        self._headers: dict[str, str] = {}
+        self._auth: aiohttp.BasicAuth | None = None
+        if api_key:
+            self._headers["x-api-key"] = api_key
+        elif username:
+            self._auth = aiohttp.BasicAuth(username, password or "")
+
+    async def async_whoami(self) -> dict[str, Any]:
+        """Return the user the credentials resolve to (validates auth)."""
+        result = await self._async_request(API_WHOAMI, raise_on_404=True)
+        return result if isinstance(result, dict) else {}
+
+    async def async_add_record(
+        self, endpoint: str, vehicle_id: int, body: dict[str, Any]
+    ) -> Any:
+        """POST a new record for a vehicle. Raises on any non-2xx response."""
+        return await self._async_request(
+            f"{endpoint}?vehicleId={vehicle_id}",
+            method="POST",
+            raise_on_404=True,
+            json=body,
+        )
 
     async def async_get_vehicles(self) -> list[dict[str, Any]]:
         """Get all vehicles from LubeLogger."""
@@ -272,7 +301,11 @@ class LubeLoggerClient:
         return None
 
     async def _async_request(
-        self, endpoint: str, method: str = "GET", **kwargs: Any
+        self,
+        endpoint: str,
+        method: str = "GET",
+        raise_on_404: bool = False,
+        **kwargs: Any,
     ) -> Any:
         """Make an async request to the LubeLogger API."""
         url = f"{self._url}{endpoint}"
@@ -283,10 +316,11 @@ class LubeLoggerClient:
                 method,
                 url,
                 auth=self._auth,
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=10),
                 **kwargs,
             ) as response:
-                if response.status == 404:
+                if response.status == 404 and not raise_on_404:
                     # Endpoint not found; log as debug and return empty result
                     _LOGGER.debug("Endpoint not found: %s", url)
                     return []

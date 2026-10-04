@@ -8,97 +8,62 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
-from .const import DOMAIN
+from .client import LubeLoggerClient
+from .const import CONF_API_KEY, CONF_PASSWORD, CONF_URL, CONF_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+_PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_URL): str,
-        vol.Required(CONF_USERNAME): str,
-        vol.Required(CONF_PASSWORD): str,
+        vol.Optional(CONF_API_KEY): _PASSWORD,
+        vol.Optional(CONF_USERNAME): str,
+        vol.Optional(CONF_PASSWORD): _PASSWORD,
     }
 )
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect."""
-    url = data[CONF_URL].rstrip("/")
-    username = data[CONF_USERNAME]
-    password = data[CONF_PASSWORD]
-
-    # Ensure URL has protocol
+def _normalize_url(url: str) -> str:
+    url = url.strip().rstrip("/")
     if not url.startswith(("http://", "https://")):
         url = f"http://{url}"
+    return url
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            # Try to authenticate and get vehicles list
-            # Try multiple possible endpoints
-            endpoints_to_try = [
-                "/api/Vehicle/GetAllVehicles",
-                "/api/Vehicle",
-                "/api/vehicles",
-                "/Vehicle/GetAllVehicles",
-            ]
-            
-            last_error = None
-            for endpoint in endpoints_to_try:
-                try:
-                    _LOGGER.debug("Trying endpoint: %s%s", url, endpoint)
-                    async with session.get(
-                        f"{url}{endpoint}",
-                        auth=aiohttp.BasicAuth(username, password),
-                        timeout=aiohttp.ClientTimeout(total=10),
-                        ssl=False,  # Allow self-signed certificates
-                    ) as response:
-                        _LOGGER.debug("Response status: %s for %s", response.status, endpoint)
-                        if response.status == 401:
-                            raise InvalidAuth
-                        if response.status == 200:
-                            # Success! Try to parse response
-                            try:
-                                data = await response.json()
-                                _LOGGER.debug("Successfully connected to LubeLogger")
-                                return {"title": f"LubeLogger ({url})"}
-                            except Exception:
-                                # Even if JSON parsing fails, 200 means we connected
-                                _LOGGER.debug("Connected but response not JSON")
-                                return {"title": f"LubeLogger ({url})"}
-                        elif response.status == 404:
-                            # Endpoint not found, try next one
-                            continue
-                        elif response.status >= 400:
-                            last_error = f"HTTP {response.status}"
-                            continue
-                except aiohttp.ClientConnectorError as err:
-                    _LOGGER.debug("Connection error for %s: %s", endpoint, err)
-                    last_error = str(err)
-                    continue
-                except aiohttp.ClientError as err:
-                    _LOGGER.debug("Client error for %s: %s", endpoint, err)
-                    last_error = str(err)
-                    continue
-            
-            # If we get here, none of the endpoints worked
-            if last_error:
-                _LOGGER.error("Failed to connect to LubeLogger: %s", last_error)
-                raise CannotConnect(f"Unable to connect: {last_error}")
-            else:
-                raise CannotConnect("Unable to connect: No valid endpoint found")
-                
-        except InvalidAuth:
-            raise
-        except CannotConnect:
-            raise
-        except Exception as err:
-            _LOGGER.exception("Unexpected error connecting to LubeLogger: %s", err)
-            raise CannotConnect(f"Connection error: {str(err)}") from err
+
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+    """Validate the credentials by calling /api/whoami and /api/vehicles."""
+    url = _normalize_url(data[CONF_URL])
+    client = LubeLoggerClient(
+        url=url,
+        username=data.get(CONF_USERNAME),
+        password=data.get(CONF_PASSWORD),
+        api_key=data.get(CONF_API_KEY),
+        session=async_get_clientsession(hass),
+    )
+    try:
+        user = await client.async_whoami()
+        await client.async_get_vehicles()
+    except aiohttp.ClientResponseError as err:
+        if err.status in (401, 403):
+            raise InvalidAuth from err
+        raise CannotConnect(f"HTTP {err.status}") from err
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise CannotConnect(str(err)) from err
+
+    name = user.get("username") or "LubeLogger"
+    return {"title": f"LubeLogger ({name})", "url": url}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -110,43 +75,69 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
-            )
+        errors: dict[str, str] = {}
 
-        # Check if this instance is already configured
-        await self.async_set_unique_id(user_input[CONF_URL])
-        self._abort_if_unique_id_configured()
-
-        errors = {}
-
-        try:
-            info = await validate_input(self.hass, user_input)
-        except CannotConnect:
-            errors["base"] = "cannot_connect"
-        except InvalidAuth:
-            errors["base"] = "invalid_auth"
-        except Exception:  # pylint: disable=broad-except
-            _LOGGER.exception("Unexpected exception")
-            errors["base"] = "unknown"
-        else:
-            return self.async_create_entry(title=info["title"], data=user_input)
+        if user_input is not None:
+            await self.async_set_unique_id(_normalize_url(user_input[CONF_URL]))
+            self._abort_if_unique_id_configured()
+            try:
+                info = await validate_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                data = {k: v for k, v in user_input.items() if v}
+                data[CONF_URL] = info["url"]
+                return self.async_create_entry(title=info["title"], data=data)
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, user_input or {}
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Allow changing the URL or credentials (e.g. switching to an API key)."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                info = await validate_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                data = {k: v for k, v in user_input.items() if v}
+                data[CONF_URL] = info["url"]
+                return self.async_update_reload_and_abort(
+                    entry, data=data, title=info["title"]
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, {CONF_URL: entry.data.get(CONF_URL)}
+            ),
+            errors=errors,
         )
 
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
-    
-    def __init__(self, message: str = "Unable to connect to LubeLogger") -> None:
-        """Initialize the error."""
-        super().__init__(message)
-        self.message = message
 
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
-
