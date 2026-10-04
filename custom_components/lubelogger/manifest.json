@@ -1,13 +1,12 @@
 {
   "domain": "lubelogger",
   "name": "LubeLogger",
-  "codeowners": ["@hollowpnt92"],
+  "codeowners": ["@ddunkijaco"],
   "config_flow": true,
-  "documentation": "https://github.com/hollowpnt92/lubelogger-ha",
+  "documentation": "https://github.com/ddunkijaco/lubelogger-ha",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/hollowpnt92/lubelogger-ha/issues",
-  "requirements": ["aiohttp>=3.8.0"],
-  "version": "1.0.13"
+  "issue_tracker": "https://github.com/ddunkijaco/lubelogger-ha/issues",
+  "requirements": [],
+  "version": "1.1.0"
 }
-
